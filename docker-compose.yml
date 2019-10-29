@@ -1,0 +1,8 @@
+version: '3'
+services:
+  godock:
+    build: .
+    ports:
+    - "8010:8010"
+    environment:
+      - PORT=8010
