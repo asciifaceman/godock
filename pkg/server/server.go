@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"github.com/asciifaceman/godock/pkg/middleware"
 
@@ -25,6 +27,8 @@ const (
 type Server struct {
 	host     string
 	port     int
+	cert     []byte
+	key      []byte
 	server   *echo.Echo
 	logger   *zap.Logger
 	handlers []handlers.Handler
@@ -60,6 +64,42 @@ func NewServer() (*Server, error) {
 
 }
 
+// DetectTLS checks if the TLS cert/key exists
+// and ingests them if they do
+func (s *Server) DetectTLS() {
+	crt := os.Getenv("GODOCKCRT")
+	if crt != "" {
+		dat, err := ioutil.ReadFile(crt)
+		if err == nil {
+			s.cert = dat
+		}
+	}
+	key := os.Getenv("GODOCKKEY")
+	if key != "" {
+		dat, err := ioutil.ReadFile(key)
+		if err == nil {
+			s.key = dat
+		}
+	}
+
+}
+
+// DetectPortOverride detects if a port env var is set to override
+func (s *Server) DetectPortOverride() {
+	port := os.Getenv("PORT")
+	if port != "" {
+		portInt, err := strconv.Atoi(port)
+		if err != nil {
+			s.logger.Error("Failed to set custom listening port",
+				zap.String("Detected", port),
+				zap.Error(err),
+			)
+			return
+		}
+		s.port = portInt
+	}
+}
+
 // getBindString returns formatted host:port
 func (s *Server) getBindString() string {
 	return fmt.Sprintf("%s:%d", s.host, s.port)
@@ -86,12 +126,27 @@ func (s *Server) Run() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 
+	s.DetectPortOverride()
+
+	var withTLS bool
+	s.DetectTLS()
+
+	if len(s.cert) > 0 || len(s.key) > 0 {
+		withTLS = true
+	}
+
 	s.logger.Info("API Starting",
 		zap.String("hostname", s.host),
 		zap.Int("Port", s.port),
+		zap.Bool("WithTLS", withTLS),
 	)
 	go func() {
-		panic(s.server.Start(s.getBindString()))
+		if len(s.cert) == 0 || len(s.key) == 0 {
+			panic(s.server.Start(s.getBindString()))
+		} else {
+			panic(s.server.StartTLS(s.getBindString(), s.cert, s.key))
+		}
+
 	}()
 	<-stop
 	s.logger.Info("shutting down...")

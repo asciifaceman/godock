@@ -37,6 +37,8 @@ func LoggingMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 				zap.String("Path", p),
 				zap.String("Requester", ip),
 				zap.String("User-Agent", ua),
+				zap.String("Protocol", req.Proto),
+				zap.Bool("TLS", c.IsTLS()),
 			)
 
 			return nil
